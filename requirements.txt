@@ -1,1 +1,6 @@
-dbt-bigquery==1.6.7
+jupyterlab
+ipykernel
+dbt-bigquery==1.7.6
+dbt-postgres==1.7.9
+psycopg2
+sqlalchemy
