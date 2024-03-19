@@ -2,5 +2,6 @@ jupyterlab
 ipykernel
 dbt-bigquery==1.7.6
 dbt-postgres==1.7.9
+dbt-snowflake==1.7.2
 psycopg2
 sqlalchemy
