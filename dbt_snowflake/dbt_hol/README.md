@@ -3,6 +3,10 @@ References:
 - [Accelerating Data Teams with dbt Core & Snowflake](https://quickstarts.snowflake.com/guide/data_teams_with_dbt_core/index.html#0)
 
 ## Table of Contents
+1. [Introduction](#introduction)
+2. [Step 1: Snowflake Configuration](#step-1-snowflake-configuration)
+3. [Step 2: DBT Configuration](#step-2-dbt-configuration)
+4. [Step 3: Connect to Data Source](#step-3-connect-to-data-sources)
 
 ## Introduction
 ### Architecture and Use Case Overview
