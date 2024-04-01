@@ -1,15 +1,21 @@
-Welcome to your new dbt project!
+# dbt Core & Snowflake Tutorial Guide
+References:
+- [Accelerating Data Teams with dbt Core & Snowflake](https://quickstarts.snowflake.com/guide/data_teams_with_dbt_core/index.html#0)
 
-### Using the starter project
+## Table of Contents
 
-Try running the following commands:
-- dbt run
-- dbt test
+## Introduction
+### Prerequisites
+To complete this tutorial, the following conditions need to be met:
+- A snowflake account with `ACCOUNTADMIN` access.
+- A good understanding on the Snowflake architecture and Snowflake objects.
+- Familiarity with SQL.
+- Having the dbt CLI installed. In this tutorial, we will be using the `dbt-snowflake`.
+
+### Objectives
+- To leverage data in Snowflake's Data Marketplace.
+- To build scalable pipelines using dbt & Snowflake.
+- To upload data to Snowflake using `dbt seed`.
+- To implement data quality tests using `dbt test`.
 
 
-### Resources:
-- Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
-- Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
-- Join the [chat](https://community.getdbt.com/) on Slack for live discussions and support
-- Find [dbt events](https://events.getdbt.com) near you
-- Check out [the blog](https://blog.getdbt.com/) for the latest news on dbt's development and best practices
