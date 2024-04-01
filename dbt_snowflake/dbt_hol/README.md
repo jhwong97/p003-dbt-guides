@@ -340,9 +340,28 @@ For this tutorial, the following steps are required to set up the dbt environmen
 
 ## Step 3: Connect to Data Sources
 To obtain the data for this tutorial, please follow the steps shown here [Connect to Data Sources](https://quickstarts.snowflake.com/guide/data_teams_with_dbt_core/index.html#4). However, in this tutorial, we will be getting the **Financial & Economic Essentials** data from **Cybersyn** as the Knoema economy data is not available in the current marketplace.
+
 ![cybersyn_data_source](/dbt_snowflake/dbt_hol/images/cybersyn_data_source.png)
 
 After getting the data, let's go back to the Snowflake worksheets and then refresh the database browser. We will notice a new shared database called `FINANCIAL__ECONOMIC_ESSENTIALS` is appeared on the list of databases (left-hand side). By expanding the databases,we'll see multiple views under the **CYBERSYN** schema. We'll use two of the views for this tutorial:
 - `STOCK_PRICE_TIMESERIES`
 - `FX_RATES_TIMESERIES`
+
 ![image](/dbt_snowflake/dbt_hol/images/new_shared_databases.png)
+
+After successfully connecting to the shared database, we can try to perform query from the datasets via the Snowflake worksheet.
+```sql
+-- Query data for the exchange rate
+SELECT * 
+FROM FINANCIAL__ECONOMIC_ESSENTIALS.CYBERSYN.FX_RATES_TIMESERIES
+WHERE "DATE" = '2024-03-21';
+
+-- Query data for the stocks
+SELECT *
+FROM FINANCIAL__ECONOMIC_ESSENTIALS.CYBERSYN.STOCK_PRICE_TIMESERIES
+WHERE
+    "DATE" = '2024-03-21' AND
+    "TICKER" = 'AAPL';
+```
+
+![image](/dbt_snowflake/dbt_hol/images/3_query_result.png)
