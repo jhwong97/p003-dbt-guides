@@ -338,3 +338,11 @@ For this tutorial, the following steps are required to set up the dbt environmen
 7. We can then refresh the Snowflake UI to see the newly created table and views as illustrated in the image below.
 ![image](/dbt_snowflake/dbt_hol/images/Pasted%20image%2020240322153104.png)
 
+## Step 3: Connect to Data Sources
+To obtain the data for this tutorial, please follow the steps shown here [Connect to Data Sources](https://quickstarts.snowflake.com/guide/data_teams_with_dbt_core/index.html#4). However, in this tutorial, we will be getting the **Financial & Economic Essentials** data from **Cybersyn** as the Knoema economy data is not available in the current marketplace.
+![cybersyn_data_source](/images/cybersyn_data_source.png)
+
+After getting the data, let's go back to the Snowflake worksheets and then refresh the database browser. We will notice a new shared database called `FINANCIAL__ECONOMIC_ESSENTIALS` is appeared on the list of databases (left-hand side). By expanding the databases,we'll see multiple views under the **CYBERSYN** schema. We'll use two of the views for this tutorial:
+- `STOCK_PRICE_TIMESERIES`
+- `FX_RATES_TIMESERIES`
+![image](/images/new_shared_databases.png)
