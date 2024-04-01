@@ -5,6 +5,19 @@ References:
 ## Table of Contents
 
 ## Introduction
+### Architecture and Use Case Overview
+In this tutorial, we are going to analyze historical trading performance of a company that has trading desks spread across different regions.
+
+In the original version (Refer to the reference), the tutorial will leverage the datasets of Knoema Economy Data Atlas that is available in Snowflake Data Marketplace. However, the Knoema Economy Data Atlas is no more provided in the data marketplace. Therefore, an alternative - **Financial & Economic Essentials Data from Cybersyn** will be used as a replacement to it.
+
+The source data used is stated below:
+- Dataset A: Stock Price History
+- Dataset B: FX Rates
+- Dataset C: Trading books
+
+The overall tutorial workflow is shown in the image below.
+![tutorial_workflow](/dbt_snowflake/dbt_hol/images/tutorial_workflow.png)
+
 ### Prerequisites
 To complete this tutorial, the following conditions need to be met:
 - A snowflake account with `ACCOUNTADMIN` access.
