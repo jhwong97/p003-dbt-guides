@@ -459,3 +459,174 @@ Before we start to build the dbt pipelines, we would need to do some simple set 
     05:53:46  Installed from version 1.1.1
     05:53:46  Up to date
     ```
+
+### dbt Pipelines for Stock Trading History
+1. The first stage of building the dbt pipeline is to declare the [dbt sources](https://docs.getdbt.com/docs/building-a-dbt-project/using-sources). Let's create a `models/l10_staging/sources.yml` file and add the following configuration:
+
+    ```yml
+    version: 2
+
+    sources:
+    - name: FINANCIAL__ECONOMIC_ESSENTIALS
+      database: FINANCIAL__ECONOMIC_ESSENTIALS
+      schema: CYBERSYN
+      tables:
+        - name: FX_RATES_TIMESERIES
+        - name: STOCK_PRICE_TIMESERIES
+    ```
+
+    This configuration file defines two tables ('**FX_RATES_TIMESERIES**' and '**STOCK_PRICE_TIMESERIES**') from the '**CYBERSYN**' schema in the '**FINANCIAL__ECONOMIC_ESSENTIALS**' database as sources for this tutorial.
+
+2. After setting up the dbt sources, we need to create the staging models which act as a first-level transformation. While not mandatory, these could act as a level of abstraction, separating ultimate source structure from the entry point of dbt pipeline. Providing your project more options to react to an upstream structure change. To create the models, you need to follow these few steps:
+    - Create a new file `models/l10_staging/stg_fx_rates_time_series.sql` and include the following codes:
+
+        ```sql
+        SELECT
+            VARIABLE,
+            BASE_CURRENCY_ID,
+            QUOTE_CURRENCY_ID,
+            BASE_CURRENCY_NAME,
+            QUOTE_CURRENCY_NAME,
+            DATE,
+            VALUE,
+            'CYBERSYN.FX_RATES_TIMESERIES' data_source_name
+        FROM {{source('FINANCIAL__ECONOMIC_ESSENTIALS', 'FX_RATES_TIMESERIES')}} src
+        ```
+
+    - Create a new file `models/l10_staging/stg_stock_price_time_series.sql` and include the following codes:
+
+        ```sql
+        SELECT
+            TICKER,
+            PRIMARY_EXCHANGE_NAME,
+            VARIABLE,
+            VARIABLE_NAME,
+            DATE,
+            VALUE,
+            'CYBERSYN.STOCK_PRICE_TIMESERIES' data_source_name
+        FROM {{source('FINANCIAL__ECONOMIC_ESSENTIALS', 'STOCK_PRICE_TIMESERIES')}} src
+        ```
+
+    I am sure you noticed, this looks like SQL with the exception of macro **{{source()}}** that is used in "FROM" part of the query instead of fully qualified path (database.schema.table). This is one of the key concepts that is allowing dbt during compilation to replace this with target-specific name. As result, you as a developer, can promote **same** pipeline code to DEV, PROD and any other environments without any changes.
+
+3. **Run the models** to create the views inside the Snowflake. There are multiple ways of running or executing the models:
+    - Run `dbt run` to run all models
+	- Run `dbt run --model l10_staging` to run all models that are located in **models/l10_staging**
+	- Run `dbt run -s stg_fx_rates_time_series` to select a specific model to run. More details are in [documentation](https://quickstarts.snowflake.com/guide/data_teams_with_dbt_core/(https://docs.getdbt.com/reference/node-selection/syntax)).
+
+    The expected outcome is shown below:
+    ```cmd
+    09:22:48  Running with dbt=1.7.9
+    09:22:50  Registered adapter: snowflake=1.7.2
+    09:22:50  [WARNING]: Configuration paths exist in your dbt_project.yml file which do not apply to any resources.
+    There are 2 unused configuration paths:
+    - models.dbt_hol.l30_mart
+    - models.dbt_hol.l20_transform
+    09:22:50  Found 2 models, 2 sources, 0 exposures, 0 metrics, 546 macros, 0 groups, 0 semantic models
+    09:22:50
+    09:22:52  Concurrency: 200 threads (target='dev')
+    09:22:52
+    model in 0 hours 0 minutes and 3.51 seconds (3.51s).
+    09:22:54
+    09:22:54  Completed successfully
+    09:22:54
+    09:22:54  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+    ```
+
+    After completing the above step, we should be able to see two new views created inside the `dbt_hol_dev` database through the Snowflake web UI. We can then start writing SQL to query data from the view. For example, executing this SQL:
+
+    ```sql
+    -- staging stage
+    SELECT * 
+    FROM dbt_hol_dev.l10_staging.stg_stock_price_time_series
+    WHERE ticker ='AAPL' 
+    AND date ='2024-03-21';
+    ```
+    It will return the following results:
+
+    ![image](/dbt_snowflake/dbt_hol/images/staging_results.png)
+
+    Based on the above image, we can see that the variable_name like Post-Market Close, All-Day High, Pre-Market Open, All-Day Low and Nasdaq Volume are represented as different individual rows. However, for this tutorial, we need to simplify it by transposing the data into columns as shown in the image below. To achieve this, we will need to create few more models for the data transformation.
+
+    ![image](/dbt_snowflake/dbt_hol/images/wanted_columns.png)
+
+4. There are multiple ways to achieve the data transformation.
+    - **Option 1: Using typical SQL method**:
+        - We first create a new file `~/models/l20_transform/tfm_stock_price_time_series.sql` and then include the following codes:
+        ```sql
+        WITH cte AS(
+            SELECT 
+                TICKER,
+                PRIMARY_EXCHANGE_NAME,
+                VARIABLE_NAME,
+                DATE,
+                VALUE,
+                data_source_name
+            FROM 
+                {{ref('stg_stock_price_time_series')}} src
+            WHERE
+                VARIABLE_NAME IN ('Post-Market Close', 'Pre-Market Open', 'All-Day High', 'All-Day Low', 'Nasdaq Volume')
+        )
+        SELECT *
+        FROM cte
+        PIVOT(SUM(Value) FOR VARIABLE_NAME IN ('Post-Market Close', 'Pre-Market Open', 'All-Day High', 'All-Day Low', 'Nasdaq Volume'))
+        AS p(TICKER,PRIMARY_EXCHANGE_NAME,DATE,data_source_name,close, open, high, low, volume)
+        ```
+    
+    - **Option 2: Using the dbt_utils method**:
+        - We create another file `~/models/l20_transform/tfm_stock_price_time_series_alt.sql` and then include the following codes:
+        ```sql
+        SELECT
+            TICKER,
+            PRIMARY_EXCHANGE_NAME,
+            DATE,
+            VALUE,
+            data_source_name,
+            {{dbt_utils.pivot(
+                column = 'VARIABLE_NAME',
+                values = dbt_utils.get_column_values(ref('stg_stock_price_time_series'), 'VARIABLE_NAME'),
+                then_value = 'value'
+            )}}
+        FROM {{ref('stg_stock_price_time_series')}}
+        GROUP BY TICKER,PRIMARY_EXCHANGE_NAME,DATE,VALUE,data_source_name
+        ```
+
+5. After the creation of those dbt transformation models, we then run the following codes:
+    - `dbt run -m tfm_stock_price_time_series.sql`
+    - `dbt run -m tfm_stock_price_time_series_alt.sql`
+    
+   If encounter any errors, you need to resolve the issues by checking either the SQL codes, connection to Snowflake, environments, etc.
+
+6. In addition, we will create one more file `~/models/l20_transform/tfm_stock_history.sql` with the following codes:
+    ```sql
+    SELECT src.*
+    FROM {{ref('tfm_stock_price_time_series')}} src
+    ```
+
+    It serves as another model that abstracts source-specific transformations into a business view. In case there were multiple feeds providing datasets of the same class (stock history in this case), this view would be able to consolidate (UNION ALL) data from all of them. Thus becoming a one-stop-shop for all stock_history data.
+
+7. **Deploy** the transformation model including all of its ancestors by running this command:
+    ```cmd
+    dbt run --model +tfm_stock_history
+    ```
+
+    The expected output will be as below:
+    ```cmd
+    13:41:38  Running with dbt=1.7.9
+    13:41:39  Registered adapter: snowflake=1.7.2
+    13:41:40  [WARNING]: Configuration paths exist in your dbt_project.yml file which do not apply to any resources.
+    There are 1 unused configuration paths:
+    - models.dbt_hol.l30_mart
+    13:41:40  Found 5 models, 2 sources, 0 exposures, 0 metrics, 546 macros, 0 groups, 0 semantic models
+    13:41:40  
+    13:41:42  Concurrency: 200 threads (target='dev')
+    13:41:42
+    13:41:42  1 of 3 START sql view model l10_staging.stg_stock_price_time_series ............ [RUN]
+    13:41:45  Finished running 3 view models in 0 hours 0 minutes and 5.11 seconds (5.11s).
+    13:41:45
+    13:41:45  Completed successfully
+    13:41:45
+    13:41:45  Done. PASS=3 WARN=0 ERROR=0 SKIP=0 TOTAL=3   
+    ```
+
+8. Check the existence of the transformed models in the Snowflake Web UI.
