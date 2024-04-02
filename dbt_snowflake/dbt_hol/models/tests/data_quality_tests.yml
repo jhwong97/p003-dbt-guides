@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: tfm_fx_rates
+    columns:
+      - name: variable||date
+        tests:
+          - unique
+          - not_null
+
+  - name: tfm_book
+    columns:
+      - name: instrument
+        tests:
+          - not_null
+          - relationships:
+              to: ref('tfm_stock_history')
+              field: ticker
+
+  - name: tfm_stock_history
+    columns:
+      - name: ticker||date
+        tests:
+          - not_null
+          - unique
