@@ -369,3 +369,93 @@ WHERE
 ```
 
 ![image](/dbt_snowflake/dbt_hol/images/3_query_result.png)
+
+## Step 4: Building dbt Data Pipelines
+For this part, we will be building dbt pipelines for:
+- Stock trading history
+- Currency exchange rates
+- Trading books
+- Profit & Loss calculation
+
+Before we start to build the dbt pipelines, we would need to do some simple set up on the dbt project directory.
+
+1. We need to create multiples sub-folders inside the `models` folder from our dbt root directory. The purpose of the sub-folders help us to improve the maintainability of our project. Run the below commands to create the required sub-folders, representing different logical levels in the pipeline:
+
+    ```cmd
+    mkdir models/l10_staging
+    mkdir models/l20_transform
+    mkdir models/l30_mart
+    mkdir models/tests
+    ```
+
+2. Next, we need to update the `dbt_project.yml` by modifying it to reflect the model structure. This step allows you to configure multiple parameters on the later level (like materialization in this tutorial).
+
+    ```yml
+    models:
+    dbt_hol:
+        # Applies to all files under models/example/
+        example:
+            materialized: view
+            +enabled: false
+        l10_staging:
+            schema: l10_staging
+            materialized: view
+        l20_transform:
+            schema: l20_transform
+            materialized: view
+        l30_mart:
+            schema: l30_mart
+            materialized: view
+    ```
+    ***Remarks***: A param called **+enabled: false** is added to the *example* section as we won't need to run those sample models. Alternatively, you can just remove the *example* section from the `dbt_project.yml`.
+
+3. **Custom schema naming macros**. By default, [generating a schema name](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/using-custom-schemas) by appending it to the target schema environment name(dev, prod). In this tutorial, we are going to override this macro, making our schema names to look exactly the same between dev and prod databases. For this, let's create a file `macros\call_me_anything_you_want.sql` with the following content:
+
+    ```sql
+    {% macro generate_schema_name(custom_schema_name, mode) -%}
+        {%- set default_schema = target.schema -%}
+        {%- if custom_schema_name is none -%}
+            {{default_schema}}
+        {%- else -%}
+            {{custom_schema_name | trim}}
+        {%- endif -%}
+
+    {% macro set_query_tag() -%}
+        {% set new_query_tag = model.name %} {# always use model name #}
+        {% if new_query_tag %}
+            {% set original_query_tag = get_current_query_tag() %}
+            {{ log("Setting query_tag to '" ~ new_query_tag ~ "'. Will reset to '" ~ original_query_tag ~ "' after materialization.") }}
+            {% do run_query("alter session set query_tag = '{}'".format(new_query_tag)) %}
+            {{ return(original_query_tag)}}
+        {% endif %}
+        {{ return(none)}}
+    {% endmacro %}
+    ```
+
+    In the code above, there is another macro written in the file called **set_query_tag()**. This one provides the ability to add additional level of transparency by automatically setting Snowflake "query_tag" to the name of the model it associated with.
+
+    So if we go to Snowflake UI and navigate to the **Query History** under the Monitoring tab, we are going to see all SQL queries run on the chosen Snowflake account(successful, failed, running etc) and clearly see what dbt model this particular query is related to.
+
+    ![image](/dbt_snowflake/dbt_hol/images/query_history.png)
+
+4. **dbt plugins**. Alongside functionality coming out of the box with dbt core, dbt also provide capability to plug-in additional packages which can be found in the [dbt Hub](https://hub.getdbt.com/) or straight out of GitHub repository. In this tutorial, we will be using some automation that the [dbt_utils](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) package provides. To set up the packages, create a new file called `packages.yml` in the root of your dbt project folder and add the following lines:
+
+    ```yml
+    packages:
+    - package: dbt-labs/dbt_utils
+      version: 1.1.1
+    ```
+
+    Once the new file created, run this command to install the defined package.
+    ```cmd
+    dbt deps
+    ```
+
+    The expected output is as below:
+    ```cmd
+    05:53:45  Running with dbt=1.7.9
+    05:53:45  Updating lock file in file path: D:\OneDrive\0_Project\e001-dbt-guides\dbt_snowflake\dbt_hol/package-lock.yml
+    05:53:45  Installing dbt-labs/dbt_utils
+    05:53:46  Installed from version 1.1.1
+    05:53:46  Up to date
+    ```
