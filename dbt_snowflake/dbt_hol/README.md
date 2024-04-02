@@ -7,7 +7,12 @@ References:
 2. [Step 1: Snowflake Configuration](#step-1-snowflake-configuration)
 3. [Step 2: DBT Configuration](#step-2-dbt-configuration)
 4. [Step 3: Connect to Data Source](#step-3-connect-to-data-sources)
-5. [Step 4: Bui;ding dbt Data Pipelines](#step-4-building-dbt-data-pipelines)
+5. [Step 4: Building dbt Data Pipelines](#step-4-building-dbt-data-pipelines)
+    - [dbt Pipelines for Stock Trading History](#dbt-pipelines-for-stock-trading-history)
+    - [dbt Pipelines for Currency Exchange Rates](#dbt-pipelines-for-currency-exchange-rates)
+    - [Combining Pipelines for Stock Trading History & Currency Exchange Rates](#combining-pipelines-for-stock-trading-history--currency-exchange-rates)
+    - [dbt Documentation](#dbt-documentation)
+    - [dbt Pipelines for Trading Books](#dbt-pipelines-for-trading-books)
 
 ## Introduction
 ### Architecture and Use Case Overview
@@ -705,3 +710,122 @@ dbt will analyze all models in the tutorial and generate a static webpage with a
 In addition, it also provides a possibility to see the full lineage of models via the visual DAG as shown in the image below.
 
 ![image](/dbt_snowflake/dbt_hol/images/lineage_graph.png)
+
+### dbt Pipelines for Trading Books
+For this section, we are going to upload two small datasets using [dbt seed](https://docs.getdbt.com/docs/building-a-dbt-project/seeds) representing trading books of two desks. To complete this part, we need to follow these few steps:
+
+1. We need to first create two csv files within the `seeds` folder.
+    - `seeds/manual_book1.csv`
+
+    ```csv
+    Book,Date,Trader,Instrument,Action,Cost,Currency,Volume,Cost_Per_Share,Stock_exchange_name
+    B2020SW1,2021-03-03,Jeff A.,AAPL,BUY,-17420,GBP,200,87.1,NASDAQ
+    B2020SW1,2021-03-03,Jeff A.,AAPL,BUY,-320050,GBP,3700,86.5,NASDAQ
+    B2020SW1,2021-01-26,Jeff A.,AAPL,SELL,52500,GBP,-500,105,NASDAQ
+    B2020SW1,2021-01-22,Jeff A.,AAPL,BUY,-100940,GBP,980,103,NASDAQ
+    B2020SW1,2021-01-22,Nick Z.,AAPL,SELL,5150,GBP,-50,103,NASDAQ
+    B2020SW1,2019-08-31,Nick Z.,AAPL,BUY,-9800,GBP,100,98,NASDAQ
+    B2020SW1,2019-08-31,Nick Z.,AAPL,BUY,-1000,GBP,50,103,NASDAQ
+    ```
+
+    - `seeds/manual_book2.csv`
+
+    ```csv
+    Book,Date,Trader,Instrument,Action,Cost,Currency,Volume,Cost_Per_Share,Stock_exchange_name
+    B-EM1,2021-03-03,Tina M.,AAPL,BUY,-17420,EUR,200,87.1,NASDAQ
+    B-EM1,2021-03-03,Tina M.,AAPL,BUY,-320050,EUR,3700,86.5,NASDAQ
+    B-EM1,2021-01-22,Tina M.,AAPL,BUY,-100940,EUR,980,103,NASDAQ
+    B-EM1,2021-01-22,Tina M.,AAPL,BUY,-100940,EUR,980,103,NASDAQ
+    B-EM1,2019-08-31,Tina M.,AAPL,BUY,-9800,EUR,100,98,NASDAQ
+    ```
+
+2. Once the csv files are created, run this command to load the data into Snowflake. The newly created tables can be found in the **public schema**.
+
+    ```cmd
+    dbt seed
+    ```
+
+    **Remarks:** *It is important to mention that this approach is feasible when dealing with smaller datasets and seldom updated. You should be using COPY/Snowpipe or other data integration options recommended for Snowflake to load larger data into it.*
+
+3. To simplify usage on the trading book datasets, we will create a model that would combine data from all desk by using the `dbt_utils.union_relations` macro to automate the code automation:
+    - Create a new model - `models/l20_transform/tfm_book.sql`
+
+        ```sql
+        {{dbt_utils.union_relations(
+            relations=[ref('manual_book1'), ref('manual_book2')])
+            }}
+        ```
+        The functionality of this dbt code is to automatically scanned structures of the involved objects, aligned all possible attributes by name and type and combined all datasets via UNION ALL. Comparing this to the size of code we entered in the model itself, you can imagine the amount of time saved by such automation. In a more layman term, it basically merges the two different datasets into 1.
+
+        Based on the trading books information, it only provides records when shares were bought or sold. Ideally, to make the daily performance analysis we need to have rows for the days shares were HOLD. Therefore, we need to include a few more models to achieve this.
+    
+    - Create a new model - `models/l20_transform/tfm_daily_position.sql`
+
+        ```sql
+        WITH cst_market_days AS
+        (
+            SELECT DISTINCT date
+            FROM {{ref('tfm_stock_history_major_currency')}} hist
+            WHERE hist.date >= ( SELECT min(date) AS min_dt FROM {{ref('tfm_book')}}  )
+        )
+        SELECT
+            cst_market_days.date,
+            trader,
+            stock_exchange_name,
+            instrument,
+            book,
+            currency,
+            sum(volume) AS total_shares
+        FROM cst_market_days
+        , {{ref('tfm_book')}} book
+        WHERE book.date <= cst_market_days.date
+        GROUP BY 1, 2, 3, 4, 5, 6 
+        ```
+
+    - Create a new model - `models/l20_transform/tfm_daily_position_with_trades.sql`
+
+        ```sql
+        SELECT book
+            , date
+            , trader
+            , instrument
+            , action
+            , cost
+            , currency
+            , volume
+            , cost_per_share
+            , stock_exchange_name
+            , SUM(t.volume) OVER(partition BY t.instrument, t.stock_exchange_name, trader ORDER BY t.date rows UNBOUNDED PRECEDING ) total_shares
+        FROM {{ref('tfm_book')}}  t
+        UNION ALL   
+        SELECT book
+            , date
+            , trader
+            , instrument
+            , 'HOLD' as action
+            , 0 AS cost
+            , currency
+            , 0      as volume
+            , 0      as cost_per_share
+            , stock_exchange_name
+            , total_shares
+        FROM {{ref('tfm_daily_position')}} 
+        WHERE (date,trader,instrument,book,stock_exchange_name) 
+            NOT IN 
+            (SELECT date,trader,instrument,book,stock_exchange_name
+                FROM {{ref('tfm_book')}}
+            )
+        ```
+
+4. Run the following command to execute the model creation process.
+    ```cmd
+    dbt run -m tfm_book+
+    ```
+
+5. After successfully creating the models, we can then query the information from the model which provide information on the stock daily position. As example, you can use the below SQL:
+    ```sql
+    SELECT * 
+    FROM dbt_hol_dev.l20_transform.tfm_daily_position_with_trades
+    WHERE trader = 'Jeff A.'
+    ORDER BY date;
+    ```
