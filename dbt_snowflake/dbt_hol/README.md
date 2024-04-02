@@ -7,6 +7,7 @@ References:
 2. [Step 1: Snowflake Configuration](#step-1-snowflake-configuration)
 3. [Step 2: DBT Configuration](#step-2-dbt-configuration)
 4. [Step 3: Connect to Data Source](#step-3-connect-to-data-sources)
+5. [Step 4: Bui;ding dbt Data Pipelines](#step-4-building-dbt-data-pipelines)
 
 ## Introduction
 ### Architecture and Use Case Overview
@@ -630,3 +631,77 @@ Before we start to build the dbt pipelines, we would need to do some simple set 
     ```
 
 8. Check the existence of the transformed models in the Snowflake Web UI.
+
+### dbt Pipelines for Currency Exchange Rates
+1. For this section, we need to perform a minimal transformation on the fx rates. First, we need to create a new model for that `models/l20_transform/tfm_fx_rates.sql` with the following codes.
+    ```sql
+    SELECT
+        VARIABLE,
+        BASE_CURRENCY_ID,
+        QUOTE_CURRENCY_ID,
+        DATE,
+        VALUE,
+        DATA_SOURCE_NAME
+    FROM 
+        {{ref('stg_fx_rates_time_series')}} AS src
+    WHERE 
+        BASE_CURRENCY_ID = 'USD' AND
+        DATE > '2018-01-01'
+    ORDER BY DATE
+    ```
+
+### Combining Pipelines for Stock Trading History & Currency Exchange Rates
+In dbt, it offers various materialization option. In this tutorial, we identified **view** as our default option as written in our **dbt_project.yml**. 
+
+For this section, we will explicitly override the materialization of the model, turning it into a table. When we deploy this model, dbt would automatically generate a new table (CTAS) replacing old content. This model aims to bring FX and Trade history datasets together.
+
+1. To achieve this, we first create a new model `models/l20_transform/tfm_stock_history_major_currency` and include the following codes:
+    ```sql
+    {{ 
+    config(
+        materialized='table', 
+        tags=["Reference Data"]
+        ) 
+    }}
+
+    SELECT
+        tsh.*,
+        fx_gbp.value * open     AS gbp_open,
+        fx_gbp.value * high	    AS gbp_high,
+        fx_gbp.value * low      AS gbp_low,
+        fx_gbp.value * close    AS gbp_close, 
+        fx_eur.value * open     AS eur_open,   
+        fx_eur.value * high	    AS eur_high,	
+        fx_eur.value * low      AS eur_low,
+        fx_eur.value * close    AS eur_close
+    FROM
+        {{ref('tfm_stock_history')}} tsh,
+        {{ref('tfm_fx_rates')}} fx_gbp,
+        {{ref('tfm_fx_rates')}} fx_eur
+    WHERE 
+        fx_gbp.QUOTE_CURRENCY_ID = 'GBP' AND
+        fx_eur.QUOTE_CURRENCY_ID = 'EUR' AND
+        tsh.date = fx_gbp.date AND
+        tsh.date = fx_eur.date
+    ```
+
+2. Deploy the model by running:
+    ```cmd
+    dbt run --model +tfm_stock_history_major_currency
+    ```
+
+3. With the completion of above steps, you can then query the information from the latest model which provide information on the stock price covering close, open, high, low and volume in GBP and EUR currency.
+
+### dbt Documentation
+As we now have more models in play, it is a good moment to talk about [dbt documentation](https://docs.getdbt.com/docs/building-a-dbt-project/documentation). By running the following commands:
+
+```cmd
+dbt docs generate
+dbt docs serve
+```
+
+dbt will analyze all models in the tutorial and generate a static webpage with a data dictionary/documentation. This is a fantastic way of sharing information with your engineering & user community as it has all important information about columns, tags, free-form model description, tests as well as the source code that is always in line with the code. So regardless how big project grows, it is super easy to understand what's happening. 
+
+In addition, it also provides a possibility to see the full lineage of models via the visual DAG as shown in the image below.
+
+![image](/dbt_snowflake/dbt_hol/images/lineage_graph.png)
