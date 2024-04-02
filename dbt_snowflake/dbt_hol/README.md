@@ -4,8 +4,12 @@ References:
 
 ## Table of Contents
 1. [Introduction](#introduction)
+    - [Architecture & Use Case Overview](#architecture-and-use-case-overview)
+    - [Prerequisites](#prerequisites)
+    - [Objectives](#objectives)
 2. [Step 1: Snowflake Configuration](#step-1-snowflake-configuration)
-3. [Step 2: DBT Configuration](#step-2-dbt-configuration)
+3. [Step 2: dbt Configuration](#step-2-dbt-configuration)
+    - [Initialize the dbt Project](#initialize-the-dbt-project)
 4. [Step 3: Connect to Data Source](#step-3-connect-to-data-sources)
 5. [Step 4: Building dbt Data Pipelines](#step-4-building-dbt-data-pipelines)
     - [dbt Pipelines for Stock Trading History](#dbt-pipelines-for-stock-trading-history)
@@ -14,6 +18,10 @@ References:
     - [dbt Documentation](#dbt-documentation)
     - [dbt Pipelines for Trading Books](#dbt-pipelines-for-trading-books)
     - [dbt Pipelines for Profit & Loss Calculation](#dbt-pipelines-for-profit--loss-calculation)
+6. [Step 5: Testing & Deployment](#step-5-testing--deployment)
+    - [Establishing Testing](#establishing-testing)
+    - [Deployment](#deployment)
+
 ## Introduction
 ### Architecture and Use Case Overview
 In this tutorial, we are going to analyze historical trading performance of a company that has trading desks spread across different regions.
@@ -143,7 +151,7 @@ By the end of this part, we should have:
 - A role for each development and production phase, and one defined user.
 
 ## Step 2: dbt Configuration
-### Initialize the dbt project
+### Initialize the dbt Project
 For this tutorial, the following steps are required to set up the dbt environment to connect to the Snowflake.
 1. Set up an virtual environment and install the `dbt-snowflake==1.7.2` package.
 2. After the installation is completed, initialize a new dbt project by running the following commands:
@@ -912,3 +920,55 @@ From the previous sections, we have obtained the history of our desks and stock 
     From the query result section, you can also utilise the graph visualisation tool to obtain the data insights.
 
     ![image](/dbt_snowflake/dbt_hol/images/data_visualisation.png)
+
+## Step 5: Testing & Deployment
+### Establishing Testing
+To build trust in your data solution, it is important to conduct testing on the models. While there are many ways to organize automated testing, but dbt comes with its own great [data tests framework](https://docs.getdbt.com/docs/building-a-dbt-project/tests). Let's build an example.
+
+First, let's add the test configuration file and add the content below. dbt comes with a set of pre-defined data tests, such as uniqueness, not_null, check constraints, ref integrity etc. We are going to set up tests on the few models, however it is highly recommended to establish reasonable test coverage across the board.
+
+1. Create a model following this directory - `models/tests/data_quality_tests.yml`
+    ```yml
+        version: 2
+
+    models:
+    - name: tfm_fx_rates
+        columns:
+        - name: variable||date
+            tests:
+            - unique
+            - not_null
+
+    - name: tfm_book
+        columns:
+        - name: instrument
+            tests:
+            - not_null
+            - relationships:
+                to: ref('tfm_stock_history')
+                field: ticker
+
+    - name: tfm_stock_history
+        columns:
+        - name: ticker||date
+            tests:
+            - not_null
+            - unique
+    ```
+
+2. Run the test by executing this command:
+    ```cmd
+    dbt test
+    ```
+
+### Deployment
+The next step would be to promote this code up the chain through our SDLC environments(which in this lab is simplified to just DEV & PROD).
+
+In real life, the project code we are working should be in source version control system like git and by now pushed into one of the feature branches and merged into dev/trunk branch. From there, typically users raise pull requests to master/release version and then perform a deployment in production environment. Thanks to the fact dbt pipelines are very readable it is possible to implement good code review practices as well as set up automatic testing with various stages as a part of CICD automation.
+
+Working with git and branches is not in scope of this lab so we will just run the following command to deploy the very same codebase to PROD environment.
+
+```cmd
+dbt seed --target=prod
+dbt run --target=prod
+```
