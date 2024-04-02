@@ -13,7 +13,7 @@ References:
     - [Combining Pipelines for Stock Trading History & Currency Exchange Rates](#combining-pipelines-for-stock-trading-history--currency-exchange-rates)
     - [dbt Documentation](#dbt-documentation)
     - [dbt Pipelines for Trading Books](#dbt-pipelines-for-trading-books)
-
+    - [dbt Pipelines for Profit & Loss Calculation](#dbt-pipelines-for-profit--loss-calculation)
 ## Introduction
 ### Architecture and Use Case Overview
 In this tutorial, we are going to analyze historical trading performance of a company that has trading desks spread across different regions.
@@ -829,3 +829,86 @@ For this section, we are going to upload two small datasets using [dbt seed](htt
     WHERE trader = 'Jeff A.'
     ORDER BY date;
     ```
+
+### dbt Pipelines for Profit & Loss Calculation
+From the previous sections, we have obtained the history of our desks and stock price history. In this part, we will create a model to show how Market Value and PnL were changing over time.
+1. Create a new model - `models/l20_transform/tfm_trading_pml.sql`
+    ```sql
+    SELECT
+        t.instrument,
+        t.stock_exchange_name,
+        t.date,
+        trader,
+        t.volume,
+        cost,
+        cost_per_share,
+        currency,
+        SUM(cost) OVER(PARTITION BY t.instrument, t.stock_exchange_name, trader ORDER BY t.date rows UNBOUNDED PRECEDING) cash_cumulative,
+        CASE WHEN t.currency = 'GBP' THEN gbp_close
+            WHEN t.currency = 'EUR' THEN eur_close
+            ELSE eur_close
+        END AS close_price_matching_ccy,
+        total_shares * close_price_matching_ccy AS market_value,
+        total_shares * close_price_matching_ccy + cash_cumulative AS PnL
+    FROM {{ref('tfm_daily_position_with_trades')}} t
+    INNER JOIN {{ref('tfm_stock_history_major_currency')}} s
+    ON t.instrument = s.TICKER
+    AND s.date = t.DATE
+    ```
+
+2. Create another model - `models/l30_mart/fct_trading_pnl.sql`
+    - This model will be created in the mart area, which will be used by many. With that in mind, it will be good idea to materialize this model as a table with incremental load mode. You can see that this materialization mode has a special macro that comes into action for the incremental runs (and ignored during initial run and full_refresh option).
+    
+    ```sql
+        {{ 
+    config(
+        materialized='incremental',
+        tags=["Fact Data"]
+        ) 
+    }}
+    SELECT src.*
+    FROM {{ref('tfm_trading_pnl')}} src
+
+    {% if is_incremental() %}
+    -- this filter will only be applied on an incremental run
+    WHERE (trader, instrument, date, stock_exchange_name) NOT IN (select trader, instrument, date, stock_exchange_name from {{ this }})
+
+    {% endif %}
+    ```
+
+3. For illustration purposes, we will create a couple of views that could be extended further, representing different lens of interpreting PnL data between treasury, risk and finance departments.
+    - Create `models/l30_mart/fct_trading_pnl_finance_view.sql`
+        ```sql
+        SELECT * 
+        -- this is a placeholder for illustration purposes
+        FROM {{ref('fct_trading_pnl')}} src
+        ```
+    
+    - Create `models/l30_mart/fct_trading_pnl_risk_view.sql`
+        ```sql
+        SELECT * 
+        -- this is a placeholder for illustration purposes
+        FROM {{ref('fct_trading_pnl')}} src
+        ```
+
+4. Deploy all of these models by running:
+    ```cmd
+    dbt run -m l30_mart
+    ```
+
+5. Check the final lineage graph by running:
+    ```cmd
+    dbt docs serve
+    ```
+
+6. We can also run a query to check the final results in the Snowflake UI:
+    ```sql
+    SELECT * 
+    FROM dbt_hol_dev.l30_mart.fct_trading_pnl
+    WHERE trader = 'Jeff A.'
+    ORDER by date
+    ```
+
+    From the query result section, you can also utilise the graph visualisation tool to obtain the data insights.
+
+    ![image](/dbt_snowflake/dbt_hol/images/data_visualisation.png)
