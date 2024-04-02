@@ -1,0 +1,13 @@
+SELECT
+    VARIABLE,
+    BASE_CURRENCY_ID,
+    QUOTE_CURRENCY_ID,
+    DATE,
+    VALUE,
+    DATA_SOURCE_NAME
+FROM 
+    {{ref('stg_fx_rates_time_series')}} AS src
+WHERE 
+    BASE_CURRENCY_ID = 'USD' AND
+    DATE > '2018-01-01'
+ORDER BY DATE
